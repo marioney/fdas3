@@ -3,6 +3,8 @@
  */
 
 #include <errno.h>
+#include <fcntl.h>
+#include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -13,7 +15,12 @@
 #include <unistd.h>
 
 
+#include "ahrs400.h"
+
+
 /*** AHRS constants ***/
+#define AHRS_GYRO_RANGE (200 * M_PI / 180)
+#define AHRS_G_RANGE 4
 #define AHRS_DEFAULT_BAUDRATE B38400
 
 #define AHRS_DATA_HEADER 0xFF
@@ -63,7 +70,7 @@
  * @return The AHRS port stream or NULL if error.
  */
 FILE* ahrs_open(char *path) {
-    int fd = open(file, O_RDWR);
+    int fd = open(path, O_RDWR);
     if (fd < 0) {
         syslog(LOG_ERR, "Error opening AHRS file: %s", strerror(errno));
         return NULL;
@@ -72,7 +79,7 @@ FILE* ahrs_open(char *path) {
     FILE *file = fdopen(fd, "rw");
     if (file == NULL) {
         syslog(LOG_ERR, "Error in fdopen: %s", strerror(errno));
-        fclose(fd);
+        close(fd);
         return NULL;
     }
     
@@ -80,7 +87,7 @@ FILE* ahrs_open(char *path) {
     if (tcgetattr(fd, &ahrs_termios)
         || cfsetispeed(&ahrs_termios, AHRS_DEFAULT_BAUDRATE)
         || cfsetospeed(&ahrs_termios, AHRS_DEFAULT_BAUDRATE)
-        || tcsetattr(fd, &ahrs_termios)) {
+        || tcsetattr(fd, TCSANOW, &ahrs_termios)) {
         syslog(LOG_WARNING, "Error setting AHRS baud rate: %s",strerror(errno));
     }
     
@@ -94,7 +101,7 @@ FILE* ahrs_open(char *path) {
  */
 int ahrs_ping(FILE *file) {
     if (fputc(PING, file) == EOF) {
-        syslog(LOG_ERROR, "ERROR writing ping to AHRS stream: %s",
+        syslog(LOG_ERR, "Error writing ping to AHRS stream: %s",
                strerror(errno));
         return -1;
     }
@@ -104,8 +111,8 @@ int ahrs_ping(FILE *file) {
         if (feof(file))
             syslog(LOG_WARNING, "EOF while waiting for ping response");
         else
-            syslog(LOG_ERROR, "Read error while waiting for ping response: %s",
-                   strerror(file));
+            syslog(LOG_ERR, "Read error while waiting for ping response: %s",
+                   strerror(errno));
         return -1;
     }
     
@@ -132,14 +139,28 @@ static int ahrs_search_header(FILE *file) {
             if (feof(file))
                 syslog(LOG_WARNING, "EOF while waiting for header");
             else
-                syslog(LOG_ERROR, "Read error while waiting for header: %s",
-                       strerror(file));
+                syslog(LOG_ERR, "Read error while waiting for header: %s",
+                       strerror(errno));
             return -1;
         }
 
         if (recv == AHRS_DATA_HEADER)
             return 0;
     }
+}
+
+
+/**
+ * Calculate message checksum.
+ * @param message payload.
+ * @param message payload length (without header or checksum).
+ * @return message checksum.
+ */
+static uint8_t checksum(uint8_t *payload, unsigned size) {
+    uint8_t checksum = 0;
+    for (int i=0; i<size; i++)
+        checksum += payload[i];
+    return checksum;
 }
 
 
@@ -161,38 +182,89 @@ int ahrs_get_msg(FILE *file, unsigned size, uint8_t *payload) {
             if (ahrs_search_header(file))
                 return -1;
         }
-
+        
         // Get message body and checksum
         if (!fread(work + work_ptr, sizeof(work) - work_ptr, 1, file)) {
             if (feof(file))
                 syslog(LOG_WARNING, "EOF while waiting for payload");
             else
-                syslog(LOG_ERROR, "Read error while waiting for payload: %s",
-                       strerror(file));
+                syslog(LOG_ERR, "Read error while waiting for payload: %s",
+                       strerror(errno));
             return -1;
         }
         
-        // Calculate checksum
-        uint8_t calculated_chk = 0;
-        for (int i=0; i<size; i++)
-            calculated_chk += work[i];
-
-        // Check message
-        if (calculated_chk == work[size]) {
+        // Check checksum
+        uint8_t recv_checksum = work[size];
+        if (checksum(work, size) == recv_checksum) {
             memcpy(payload, work, size);
             return 0;
         }
-
+        
         // Look for header in work buffer
         work_ptr = 0;
         header_found = false;
         for (int i=0; i<sizeof work; i++) {
             if (work[i] == AHRS_DATA_HEADER) {
-                memcpy(work, work + i + 1, sizeof(work) - i - 1);
+                memmove(work, work + i + 1, sizeof(work) - i - 1);
                 work_ptr = sizeof(work) - i - 1;
                 header_found = true;
                 break;
             }
         }
     }
+}
+
+
+static inline int16_t pack_int16(uint8_t *payload, unsigned index) {
+    unsigned msb = index*2;
+    unsigned lsb = index*2 + 1;
+    return payload[lsb] + ((int16_t)payload[msb]<<8);
+}
+
+
+static inline double raw_to_angle(int16_t raw){
+    return raw * M_PI / 32768.0;
+}
+
+
+static inline double raw_to_gyro(int16_t raw){
+    return raw * 1.5 * AHRS_GYRO_RANGE / 32768.0;
+}
+
+
+static inline double raw_to_accel(int16_t raw){
+    return raw * 1.5 * AHRS_G_RANGE * 9.8 / 32768.0;
+}
+
+
+static inline double raw_to_mag(int16_t raw){
+    return raw * 1.5 * 1.25e-4 / 32768.0;
+}
+
+
+static inline double raw_to_temperature(int16_t raw){
+    return ((raw * 5 / 4096.0) - 1.375) * 44.44;
+}
+
+
+static inline double raw_to_time(int16_t raw){
+    return -raw * 0.00000079;
+}
+
+
+void ahrs_parse_angle(uint8_t *payload, fdas3_ahrs400_angle_t *data) {
+    data->angle[0] = raw_to_angle(pack_int16(payload, 0));
+    data->angle[1] = raw_to_angle(pack_int16(payload, 1));
+    data->angle[2] = raw_to_angle(pack_int16(payload, 2));
+    data->gyro[0] = raw_to_gyro(pack_int16(payload, 3));
+    data->gyro[1] = raw_to_gyro(pack_int16(payload, 4));
+    data->gyro[2] = raw_to_gyro(pack_int16(payload, 5));
+    data->accel[0] = raw_to_accel(pack_int16(payload, 6));
+    data->accel[1] = raw_to_accel(pack_int16(payload, 7));
+    data->accel[2] = raw_to_accel(pack_int16(payload, 8));
+    data->mag[0] = raw_to_mag(pack_int16(payload, 9));
+    data->mag[1] = raw_to_mag(pack_int16(payload, 10));
+    data->mag[2] = raw_to_mag(pack_int16(payload, 11));
+    data->temperature = raw_to_temperature(pack_int16(payload, 12));
+    data->sensor_time = raw_to_time(pack_int16(payload, 13));
 }
