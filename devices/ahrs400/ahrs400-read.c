@@ -1,0 +1,90 @@
+/**
+ * Device module for Crossbow's AHRS400 Attitude and Heading Reference System.
+ */
+
+
+#include <argp.h>
+#include <stdlib.h>
+#include <stdlib.h>
+#include <syslog.h>
+
+#include "ahrs400.h"
+
+
+/** Program version. */
+const char *argp_program_version = "ahrs400-read 0.1";
+
+/** Bug report address. */
+const char *argp_program_bug_address = "https://github.com/cea-ufmg/fdas3";
+
+/** Program documentation. */
+static char doc[] = "ahrs400-read -- Read from a Crossbow AHRS400.";
+
+/** Description of the accepted arguments. */
+static char args_doc[] = "PORT";
+
+/** Program arguments structure. */
+struct arguments {
+    char *port;
+};
+
+/** Argument parser function */
+static error_t parse_opt (int key, char *arg, struct argp_state *state) {
+    //Get the arguments structure to write the parsed options
+    struct arguments *arguments = state->input;
+    
+    switch (key) {
+    case ARGP_KEY_ARG:
+      if (state->arg_num >= 1)
+          argp_usage(state);//Too many arguments
+      arguments->port = arg;
+      break;
+
+    case ARGP_KEY_END:
+        if (state->arg_num < 1)
+            argp_usage (state);//Not enough arguments
+      break;
+        
+    default:
+        return ARGP_ERR_UNKNOWN;        
+    }
+    
+    return 0;
+}
+
+
+/** Argument parser object. */
+static struct argp argp = { 0, parse_opt, args_doc, doc };
+
+
+int main(int argc, char **argv) {
+    // Parse command line arguments
+    struct arguments arguments;
+    argp_parse(&argp, argc, argv, 0, 0, &arguments);
+
+    // Setup syslog
+    openlog(0, LOG_PERROR, 0);
+
+    // Open AHRS port
+    FILE *stream = ahrs_open(arguments.port);
+    if (!stream)
+        return EXIT_FAILURE;
+
+    // Ping the AHRS
+    if (ahrs_ping)
+        return EXIT_FAILURE;
+
+    for (;;) {
+        uint8_t payload[AHRS_ANGLE_PAYLOAD_LEN];
+        uint64_t recv_timestamp;
+        fdas3_ahrs400_angle_t data;
+        
+        if (ahrs_get_msg(stream, sizeof payload, payload, &recv_timestamp))
+            return EXIT_FAILURE;
+
+        ahrs_parse_angle(payload, &data);
+        data.recv_timestamp = recv_timestamp;
+    }
+    
+    return 0;
+}

@@ -6,12 +6,11 @@
 #include <fcntl.h>
 #include <math.h>
 #include <stdbool.h>
-#include <stdint.h>
-#include <stdio.h>
 #include <string.h>
 #include <syslog.h>
 #include <sys/stat.h>
 #include <termios.h>
+#include <time.h>
 #include <unistd.h>
 
 
@@ -72,7 +71,8 @@
 FILE* ahrs_open(char *path) {
     int fd = open(path, O_RDWR);
     if (fd < 0) {
-        syslog(LOG_ERR, "Error opening AHRS file: %s", strerror(errno));
+        char *msg = "Error opening AHRS file `%s`: %s";
+        syslog(LOG_ERR, msg, path, strerror(errno));
         return NULL;
     }
     
@@ -88,7 +88,8 @@ FILE* ahrs_open(char *path) {
         || cfsetispeed(&ahrs_termios, AHRS_DEFAULT_BAUDRATE)
         || cfsetospeed(&ahrs_termios, AHRS_DEFAULT_BAUDRATE)
         || tcsetattr(fd, TCSANOW, &ahrs_termios)) {
-        syslog(LOG_WARNING, "Error setting AHRS baud rate: %s",strerror(errno));
+        char *msg = "Error setting AHRS baud rate: %s";
+        syslog(LOG_WARNING, msg, strerror(errno));
     }
     
     return file;
@@ -135,6 +136,9 @@ static int ahrs_search_header(FILE *file) {
         //Get the next character from the stream
         int recv = fgetc(file);
         
+        if (recv == AHRS_DATA_HEADER)
+            return 0;
+        
         if (recv == EOF) {
             if (feof(file))
                 syslog(LOG_WARNING, "EOF while waiting for header");
@@ -143,9 +147,6 @@ static int ahrs_search_header(FILE *file) {
                        strerror(errno));
             return -1;
         }
-
-        if (recv == AHRS_DATA_HEADER)
-            return 0;
     }
 }
 
@@ -165,23 +166,43 @@ static uint8_t checksum(uint8_t *payload, unsigned size) {
 
 
 /**
+ * Get current time in microseconds since epoch.
+ */
+static inline uint64_t get_time_us() {
+    struct timespec t;
+    if (clock_gettime(CLOCK_REALTIME, &t)) {
+        syslog(LOG_ERR, "Error getting time: %s", strerror(errno));
+        return 0;
+    }
+
+    return t.tv_sec * 1000 + t.tv_nsec / 1000;
+}
+
+
+/**
  * Get a message from the AHRS.
  * @param AHRS400 serial port stream.
- * @param packet payload size.
+ * @param packet payload size (without header or checksum).
  * @param[out] pointer to where the payload should be stored.
+ * @param[out] reception time in microseconds since epoch.
  * @return 0 if message read and payload stored, -1 if error or EOF.
  */
-int ahrs_get_msg(FILE *file, unsigned size, uint8_t *payload) {
+int ahrs_get_msg(FILE *file, unsigned size, uint8_t *payload,
+                 uint64_t *recv_timestamp) {
     uint8_t work[size + 1];
     uint8_t work_ptr = 0;
     bool header_found = false;
     
     for (;;) {
         // Look for header
-        if (header_found) {
+        if (!header_found) {
             if (ahrs_search_header(file))
                 return -1;
         }
+
+        // Save the time the header was found
+        if (recv_timestamp)
+            *recv_timestamp = get_time_us();
         
         // Get message body and checksum
         if (!fread(work + work_ptr, sizeof(work) - work_ptr, 1, file)) {
