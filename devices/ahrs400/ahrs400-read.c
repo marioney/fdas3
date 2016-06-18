@@ -4,9 +4,12 @@
 
 
 #include <argp.h>
+#include <errno.h>
+#include <stdio.h>
 #include <stdlib.h>
-#include <stdlib.h>
+#include <string.h>
 #include <syslog.h>
+#include <unistd.h>
 
 #include "ahrs400.h"
 
@@ -70,10 +73,25 @@ int main(int argc, char **argv) {
     if (!stream)
         return EXIT_FAILURE;
 
+    // Put AHRS into polled mode for configuration
+    if (ahrs_set_polled(stream))
+        return EXIT_FAILURE;
+        
+    // Wait for pending data to arrive and clear buffers
+    fflush(stream);
+    sleep(1);
+    ahrs_purge(stream);
+    
     // Ping the AHRS
-    if (ahrs_ping)
+    if (ahrs_ping(stream))
+        return EXIT_FAILURE;
+    
+    // Set the mode
+    if (ahrs_set_mode(stream, AHRS_ANGLE_MODE)
+        || ahrs_set_continuous(stream))
         return EXIT_FAILURE;
 
+    // Read loop
     for (;;) {
         uint8_t payload[AHRS_ANGLE_PAYLOAD_LEN];
         uint64_t recv_timestamp;
@@ -84,6 +102,10 @@ int main(int argc, char **argv) {
 
         ahrs_parse_angle(payload, &data);
         data.recv_timestamp = recv_timestamp;
+        printf("%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\n",
+               data.accel[0], data.accel[1], data.accel[2],
+               data.gyro[0], data.gyro[1], data.gyro[2],
+               data.angle[0], data.angle[1], data.angle[2]);
     }
     
     return 0;

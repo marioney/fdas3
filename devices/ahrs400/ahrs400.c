@@ -71,13 +71,13 @@
 FILE* ahrs_open(char *path) {
     int fd = open(path, O_RDWR);
     if (fd < 0) {
-        char *msg = "Error opening AHRS file `%s`: %s";
+        char *msg = "Error opening AHRS port `%s`: %s";
         syslog(LOG_ERR, msg, path, strerror(errno));
         return NULL;
     }
     
-    FILE *file = fdopen(fd, "rw");
-    if (file == NULL) {
+    FILE *file = fdopen(fd, "r+b");
+    if (!file) {
         syslog(LOG_ERR, "Error in fdopen: %s", strerror(errno));
         close(fd);
         return NULL;
@@ -88,12 +88,19 @@ FILE* ahrs_open(char *path) {
         || cfsetispeed(&ahrs_termios, AHRS_DEFAULT_BAUDRATE)
         || cfsetospeed(&ahrs_termios, AHRS_DEFAULT_BAUDRATE)
         || tcsetattr(fd, TCSANOW, &ahrs_termios)) {
-        char *msg = "Error setting AHRS baud rate: %s";
+        char *msg = "Error setting AHRS serial port baud rate: %s";
         syslog(LOG_WARNING, msg, strerror(errno));
+    } else {
+        cfmakeraw(&ahrs_termios);
+        if (tcsetattr(fd, TCSANOW, &ahrs_termios)) {
+            char *msg = "Error making AHRS serial port raw: %s";
+            syslog(LOG_WARNING, msg, strerror(errno));            
+        }
     }
     
     return file;
 }
+
 
 /**
  * Ping the AHRS.
@@ -122,6 +129,110 @@ int ahrs_ping(FILE *file) {
         return -1;
     }
 
+    return 0;
+}
+
+
+/**
+ * Put the AHRS in the continuous mode.
+ * @param AHRS400 serial port stream.
+ * @return 0 if success, -1 if error.
+ */
+int ahrs_set_continuous(FILE *file) {
+    if (fputc(CONTINUOUS_MODE, file) == EOF) {
+        syslog(LOG_ERR, "Error writing continuous mode to AHRS stream: %s",
+               strerror(errno));
+        return -1;
+    }
+    return 0;    
+}
+
+
+/**
+ * Put the AHRS in the polled mode.
+ * @param AHRS400 serial port stream.
+ * @return 0 if success, -1 if error.
+ */
+int ahrs_set_polled(FILE *file) {
+    if (fputc(POLLED_MODE, file) == EOF) {
+        syslog(LOG_ERR, "Error writing polled mode to AHRS stream: %s",
+               strerror(errno));
+        return -1;
+    }
+    return 0;
+}
+
+
+/**
+ * Flush the AHRS input/output stream.
+ * @param AHRS400 serial port stream.
+ * @return 0 if success, -1 if error.
+ */
+int ahrs_purge(FILE *file) {
+    int fd = fileno(file);
+    if (fd < 0) {
+        syslog(LOG_ERR, "Error getting file descriptor: %s", strerror(errno));
+        return -1;
+    }
+    
+    if (tcflush(fd, TCIOFLUSH)) {
+        syslog(LOG_WARNING, "Error flushing stream: %s", strerror(errno));
+        return -1;
+    }
+    
+    return 0;
+}
+
+
+
+/**
+ * Set the AHRS measurement mode.
+ * @param AHRS400 serial port stream.
+ * @param desired mode.
+ * @return 0 if success received, -1 if error or EOF.
+ */
+int ahrs_set_mode(FILE *file, ahrs_mode_t mode) {
+    char mode_command, mode_response;
+    
+    switch (mode) {
+    case AHRS_VOLTAGE_MODE:
+        mode_command = VOLTAGE_MODE;
+        mode_response = VOLTAGE_MODE_RESPONSE;
+        break;
+    case AHRS_SCALED_MODE:
+        mode_command = SCALED_MODE;
+        mode_response = SCALED_MODE_RESPONSE;
+        break;
+    case AHRS_ANGLE_MODE:
+        mode_command = ANGLE_MODE;
+        mode_response = ANGLE_MODE_RESPONSE;
+        break;
+    default:
+        syslog(LOG_ERR, "Unknown AHRS mode");
+        return -1;
+    }
+    
+    if (fputc(mode_command, file) == EOF) {
+        syslog(LOG_ERR, "Error writing mode command to AHRS stream: %s",
+               strerror(errno));
+        return -1;
+    }
+    
+    int response = fgetc(file);
+    if (response == EOF) {
+        if (feof(file))
+            syslog(LOG_WARNING, "EOF while waiting for mode response");
+        else
+            syslog(LOG_ERR, "Read error while waiting for mode response: %s",
+                   strerror(errno));
+        return -1;
+    }
+    
+    if (response != mode_response) {
+        syslog(LOG_INFO, "Invalid mode response from AHRS: %#x", response);
+        return -1;
+    }
+    
     return 0;
 }
 
