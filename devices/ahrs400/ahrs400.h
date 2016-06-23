@@ -8,7 +8,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
-#include "fdas3_ahrs400_angle_t.h"
+#include "generated/ahrs400_messages/mavlink.h"
 
 #define AHRS_ANGLE_PAYLOAD_LEN 28
 
@@ -26,7 +26,7 @@ int ahrs_purge(FILE *file);
 int ahrs_set_mode(FILE *file, ahrs_mode_t mode);
 int ahrs_get_msg(FILE *file, unsigned size, uint8_t *payload,
                  uint64_t *recv_timestamp);
-void ahrs_parse_angle(uint8_t *payload, fdas3_ahrs400_angle_t *data);
+void ahrs_parse_angle(uint8_t *payload, mavlink_ahrs400_angle_t *data);
 
 
 #endif//AHRS400_H

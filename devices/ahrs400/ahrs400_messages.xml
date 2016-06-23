@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<mavlink>
+  <enums>
+  </enums>
+  <messages>
+    <message id="150" name="AHRS400_ANGLE_RAW">
+      <description>Raw angle mode message from a Crossbow AHRS400 attitude and heading reference system.</description>
+      <field type="uint64_t" name="time_usec">Unix timestamp in microseconds or since system boot if smaller than MAVLink epoch (1.1.2009)</field>
+      <field type="int16_t[3]" name="angle">Roll, pitch, yaw Euler angles, 180degrees/2^15</field>
+      <field type="int16_t[3]" name="gyro">x,y,z angular velocities, angular rate range * 1.5/2^15</field>
+      <field type="int16_t[3]" name="accel">x,y,z accelerations, G range*1.5/2^15</field>
+      <field type="int16_t[3]" name="mag">x,y,z magnetic field, magnetic field range * 1.5/2^15</field>
+      <field type="uint16_t" name="temperature">temperature</field>
+      <field type="uint16_t" name="sensor_time">internal time of the DMU.</field>
+    </message>
+    <message id="151" name="AHRS400_ANGLE">
+      <description>Angle mode message from a Crossbow AHRS400 attitude and heading reference system.</description>
+      <field type="uint64_t" name="time_usec">Unix timestamp in microseconds or since system boot if smaller than MAVLink epoch (1.1.2009)</field>
+      <field type="float[3]" name="angle">Roll, pitch, yaw Euler angles, radians</field>
+      <field type="float[3]" name="gyro">x,y,z angular velocities, radian/second</field>
+      <field type="float[3]" name="accel">x,y,z accelerations, m/s^2</field>
+      <field type="float[3]" name="mag">x,y,z magnetic field, tesla</field>
+      <field type="float" name="temperature">temperature, degrees Celsius</field>
+      <field type="float" name="sensor_time">internal time of the DMU.</field>
+    </message>
+  </messages>
+</mavlink>

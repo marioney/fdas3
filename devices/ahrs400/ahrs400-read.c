@@ -95,13 +95,13 @@ int main(int argc, char **argv) {
     for (;;) {
         uint8_t payload[AHRS_ANGLE_PAYLOAD_LEN];
         uint64_t recv_timestamp;
-        fdas3_ahrs400_angle_t data;
+        mavlink_ahrs400_angle_t data;
         
         if (ahrs_get_msg(stream, sizeof payload, payload, &recv_timestamp))
             return EXIT_FAILURE;
 
         ahrs_parse_angle(payload, &data);
-        data.recv_timestamp = recv_timestamp;
+        data.time_usec = recv_timestamp;
         printf("%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\n",
                data.accel[0], data.accel[1], data.accel[2],
                data.gyro[0], data.gyro[1], data.gyro[2],

@@ -384,7 +384,7 @@ static inline double raw_to_time(int16_t raw){
 }
 
 
-void ahrs_parse_angle(uint8_t *payload, fdas3_ahrs400_angle_t *data) {
+void ahrs_parse_angle(uint8_t *payload, mavlink_ahrs400_angle_t *data) {
     data->angle[0] = raw_to_angle(pack_int16(payload, 0));
     data->angle[1] = raw_to_angle(pack_int16(payload, 1));
     data->angle[2] = raw_to_angle(pack_int16(payload, 2));
