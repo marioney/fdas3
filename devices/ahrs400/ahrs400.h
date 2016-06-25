@@ -24,9 +24,9 @@ int ahrs_set_continuous(FILE *file);
 int ahrs_set_polled(FILE *file);
 int ahrs_purge(FILE *file);
 int ahrs_set_mode(FILE *file, ahrs_mode_t mode);
-int ahrs_get_msg(FILE *file, unsigned size, uint8_t *payload,
-                 uint64_t *recv_timestamp);
-void ahrs_parse_angle(uint8_t *payload, mavlink_ahrs400_angle_t *data);
+int ahrs_get_angle_raw(FILE *file, mavlink_ahrs400_angle_raw_t *angle_raw);
+void ahrs_angle_conv(mavlink_ahrs400_angle_raw_t *raw,
+                     mavlink_ahrs400_angle_t *scaled);
 
 
 #endif//AHRS400_H

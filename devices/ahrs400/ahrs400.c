@@ -242,7 +242,7 @@ int ahrs_set_mode(FILE *file, ahrs_mode_t mode) {
  * @param AHRS400 serial port stream.
  * @return 0 if header found, -1 if error or EOF.
  */
-static int ahrs_search_header(FILE *file) {
+static int search_header(FILE *file) {
     for (;;) {
         //Get the next character from the stream
         int recv = fgetc(file);
@@ -298,8 +298,8 @@ static inline uint64_t get_time_us() {
  * @param[out] reception time in microseconds since epoch.
  * @return 0 if message read and payload stored, -1 if error or EOF.
  */
-int ahrs_get_msg(FILE *file, unsigned size, uint8_t *payload,
-                 uint64_t *recv_timestamp) {
+static int get_msg(FILE *file, unsigned size, uint8_t *payload,
+                   uint64_t *recv_timestamp) {
     uint8_t work[size + 1];
     uint8_t work_ptr = 0;
     bool header_found = false;
@@ -307,7 +307,7 @@ int ahrs_get_msg(FILE *file, unsigned size, uint8_t *payload,
     for (;;) {
         // Look for header
         if (!header_found) {
-            if (ahrs_search_header(file))
+            if (search_header(file))
                 return -1;
         }
 
@@ -328,11 +328,12 @@ int ahrs_get_msg(FILE *file, unsigned size, uint8_t *payload,
         // Check checksum
         uint8_t recv_checksum = work[size];
         if (checksum(work, size) == recv_checksum) {
+            // Valid message received, save output and return
             memcpy(payload, work, size);
             return 0;
         }
         
-        // Look for header in work buffer
+        // Invalid message, look for header in work buffer
         work_ptr = 0;
         header_found = false;
         for (int i=0; i<sizeof work; i++) {
@@ -351,6 +352,43 @@ static inline int16_t pack_int16(uint8_t *payload, unsigned index) {
     unsigned msb = index*2;
     unsigned lsb = index*2 + 1;
     return payload[lsb] + ((int16_t)payload[msb]<<8);
+}
+
+
+static inline uint16_t pack_uint16(uint8_t *payload, unsigned index) {
+    return (uint16_t) pack_int16(payload, index);
+}
+
+
+/**
+ * Get an angle mode message from the AHRS.
+ * @param AHRS400 serial port stream.
+ * @param Angle raw message payload.
+ * @return 0 if message read and payload stored, -1 if error or EOF.
+ */
+int ahrs_get_angle_raw(FILE *file, mavlink_ahrs400_angle_raw_t *angle_raw) {
+    uint8_t payload[AHRS_ANGLE_PAYLOAD_LEN];
+    uint64_t recv_timestamp;
+
+    if (get_msg(file, sizeof payload, payload, &recv_timestamp))
+        return -1;
+
+    angle_raw->time_usec = recv_timestamp;
+    angle_raw->roll = pack_int16(payload, 0);
+    angle_raw->pitch = pack_int16(payload, 1);
+    angle_raw->yaw = pack_int16(payload, 2);
+    angle_raw->xgyro = pack_int16(payload, 3);
+    angle_raw->ygyro = pack_int16(payload, 4);
+    angle_raw->zgyro = pack_int16(payload, 5);
+    angle_raw->xacc = pack_int16(payload, 6);
+    angle_raw->yacc = pack_int16(payload, 7);
+    angle_raw->zacc = pack_int16(payload, 8);
+    angle_raw->xmag = pack_int16(payload, 9);
+    angle_raw->ymag = pack_int16(payload, 10);
+    angle_raw->zmag = pack_int16(payload, 11);
+    angle_raw->temperature = pack_uint16(payload, 12);
+    angle_raw->sensor_time = pack_uint16(payload, 13);
+    return 0;
 }
 
 
@@ -374,7 +412,7 @@ static inline double raw_to_mag(int16_t raw){
 }
 
 
-static inline double raw_to_temperature(int16_t raw){
+static inline double raw_to_temperature(uint16_t raw){
     return ((raw * 5 / 4096.0) - 1.375) * 44.44;
 }
 
@@ -384,19 +422,20 @@ static inline double raw_to_time(int16_t raw){
 }
 
 
-void ahrs_parse_angle(uint8_t *payload, mavlink_ahrs400_angle_t *data) {
-    data->angle[0] = raw_to_angle(pack_int16(payload, 0));
-    data->angle[1] = raw_to_angle(pack_int16(payload, 1));
-    data->angle[2] = raw_to_angle(pack_int16(payload, 2));
-    data->gyro[0] = raw_to_gyro(pack_int16(payload, 3));
-    data->gyro[1] = raw_to_gyro(pack_int16(payload, 4));
-    data->gyro[2] = raw_to_gyro(pack_int16(payload, 5));
-    data->accel[0] = raw_to_accel(pack_int16(payload, 6));
-    data->accel[1] = raw_to_accel(pack_int16(payload, 7));
-    data->accel[2] = raw_to_accel(pack_int16(payload, 8));
-    data->mag[0] = raw_to_mag(pack_int16(payload, 9));
-    data->mag[1] = raw_to_mag(pack_int16(payload, 10));
-    data->mag[2] = raw_to_mag(pack_int16(payload, 11));
-    data->temperature = raw_to_temperature(pack_int16(payload, 12));
-    data->sensor_time = raw_to_time(pack_int16(payload, 13));
+void ahrs_angle_conv(mavlink_ahrs400_angle_raw_t *raw,
+                     mavlink_ahrs400_angle_t *scaled) {
+    scaled->xacc = raw_to_accel(raw->xacc);
+    scaled->yacc = raw_to_accel(raw->yacc);
+    scaled->zacc = raw_to_accel(raw->zacc);
+    scaled->xgyro = raw_to_gyro(raw->xgyro);
+    scaled->ygyro = raw_to_gyro(raw->ygyro);
+    scaled->zgyro = raw_to_gyro(raw->zgyro);
+    scaled->xmag = raw_to_mag(raw->xmag);
+    scaled->ymag = raw_to_mag(raw->ymag);
+    scaled->zmag = raw_to_mag(raw->zmag);
+    scaled->roll = raw_to_angle(raw->roll);
+    scaled->pitch = raw_to_angle(raw->pitch);
+    scaled->yaw = raw_to_angle(raw->yaw);
+    scaled->temperature = raw_to_temperature(raw->temperature);
+    scaled->sensor_time = raw->sensor_time;
 }

@@ -6,22 +6,38 @@
     <message id="150" name="AHRS400_ANGLE_RAW">
       <description>Raw angle mode message from a Crossbow AHRS400 attitude and heading reference system.</description>
       <field type="uint64_t" name="time_usec">Unix timestamp in microseconds or since system boot if smaller than MAVLink epoch (1.1.2009)</field>
-      <field type="int16_t[3]" name="angle">Roll, pitch, yaw Euler angles, 180degrees/2^15</field>
-      <field type="int16_t[3]" name="gyro">x,y,z angular velocities, angular rate range * 1.5/2^15</field>
-      <field type="int16_t[3]" name="accel">x,y,z accelerations, G range*1.5/2^15</field>
-      <field type="int16_t[3]" name="mag">x,y,z magnetic field, magnetic field range * 1.5/2^15</field>
+      <field type="int16_t" name="xacc">X acceleration (G range*1.5/2^15)</field>
+      <field type="int16_t" name="yacc">Y acceleration (G range*1.5/2^15)</field>
+      <field type="int16_t" name="zacc">Z acceleration (G range*1.5/2^15)</field>
+      <field type="int16_t" name="xgyro">Angular speed around X axis (angular rate range*1.5/2^15)</field>
+      <field type="int16_t" name="ygyro">Angular speed around Y axis (angular rate range*1.5/2^15)</field>
+      <field type="int16_t" name="zgyro">Angular speed around Z axis (angular rate range*1.5/2^15)</field>
+      <field type="int16_t" name="xmag">X magnetic field (magnetic field range*1.5/2^15)</field>
+      <field type="int16_t" name="ymag">Y magnetic field (magnetic field range*1.5/2^15)</field>
+      <field type="int16_t" name="zmag">Z magnetic field (magnetic field range*1.5/2^15)</field>
+      <field type="int16_t" name="roll">Roll angle (180degrees/2^15)</field>
+      <field type="int16_t" name="pitch">Pitch angle (180degrees/2^15)</field>
+      <field type="int16_t" name="yaw">Yaw angle (180degrees/2^15)</field>
       <field type="uint16_t" name="temperature">temperature</field>
-      <field type="uint16_t" name="sensor_time">internal time of the DMU.</field>
+      <field type="uint16_t" name="sensor_time">internal time of the DMU</field>
     </message>
     <message id="151" name="AHRS400_ANGLE">
       <description>Angle mode message from a Crossbow AHRS400 attitude and heading reference system.</description>
       <field type="uint64_t" name="time_usec">Unix timestamp in microseconds or since system boot if smaller than MAVLink epoch (1.1.2009)</field>
-      <field type="float[3]" name="angle">Roll, pitch, yaw Euler angles, radians</field>
-      <field type="float[3]" name="gyro">x,y,z angular velocities, radian/second</field>
-      <field type="float[3]" name="accel">x,y,z accelerations, m/s^2</field>
-      <field type="float[3]" name="mag">x,y,z magnetic field, tesla</field>
-      <field type="float" name="temperature">temperature, degrees Celsius</field>
-      <field type="float" name="sensor_time">internal time of the DMU.</field>
+      <field type="float" name="xacc">X acceleration (m/s^2)</field>
+      <field type="float" name="yacc">Y acceleration (m/s^2)</field>
+      <field type="float" name="zacc">Z acceleration (m/s^2)</field>
+      <field type="float" name="xgyro">Angular speed around X axis (rad/s)</field>
+      <field type="float" name="ygyro">Angular speed around Y axis (rad/s)</field>
+      <field type="float" name="zgyro">Angular speed around Z axis (rad/s)</field>
+      <field type="float" name="xmag">X magnetic field (Gauss)</field>
+      <field type="float" name="ymag">Y magnetic field (Gauss)</field>
+      <field type="float" name="zmag">Z magnetic field (Gauss)</field>
+      <field type="float" name="roll">Roll angle (rad)</field>
+      <field type="float" name="pitch">Pitch angle (rad)</field>
+      <field type="float" name="yaw">Yaw angle (rad)</field>
+      <field type="float" name="temperature">temperature (degrees Celsius)</field>
+      <field type="uint16_t" name="sensor_time">internal time of the DMU</field>
     </message>
   </messages>
 </mavlink>

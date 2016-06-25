@@ -1,6 +1,7 @@
 add_custom_command(
   OUTPUT generated/ahrs400_messages/mavlink.h
   COMMAND mavgen.py --lang=C --output=generated
+            --wire-protocol 1.0
             ${CMAKE_CURRENT_SOURCE_DIR}/ahrs400_messages.xml
   MAIN_DEPENDENCY ahrs400_messages.xml)
 add_custom_target(mavgen DEPENDS generated/ahrs400_messages/mavlink.h)
