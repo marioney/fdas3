@@ -5,10 +5,12 @@
 
 #include <argp.h>
 #include <errno.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <syslog.h>
+#include <sys/socket.h>
 #include <unistd.h>
 
 #include "ahrs400.h"
@@ -28,10 +30,14 @@ static char args_doc[] = "PORT";
 
 /** Program options structure. */
 static struct argp_option options[] = {
-  {"logtxt", 't', "FILE", 0, "Write received data as text to FILE"},
-  {"logbin", 'b', "FILE", 0, "Write binary Mavlink stream FILE"},
-  {"udp", 'u', "ADDR:PORT", 0, "Send Mavlink messages as UDP to ADDR:PORT"},
-  {0}
+    {"logtxt", 't', "FILE", 0, "Write received data as text to FILE"},
+    {"logbin", 'b', "FILE", 0, "Write binary MAVLink stream FILE"},
+    {"udp", 'u', 0,  0, "Send MAVLink messages as UDP"},
+    {"udp-host", 'h', "HOST", 0, "Host to send MAVLink messages via UDP,"
+     " defaults to 224.0.0.1, implies --udp"},
+    {"udp-port", 'p', "PORT", 0, "Port to send MAVLink messages via UDP,"
+     " defaults to 57600, implies --udp"},
+    {0}
 };
 
 /** Program arguments structure. */
@@ -39,7 +45,16 @@ struct arguments {
     char *port;
     char *text_log;
     char *binary_log;
-    char *udp_dest;
+    bool use_udp;
+    char *udp_host;
+    short udp_port;
+};
+
+/** Program output streams structure */
+struct output_streams {
+    int udp_sock;
+    FILE *binary_log;
+    FILE *text_log;
 };
 
 /** Argument parser function */
@@ -56,8 +71,24 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state) {
         arguments->binary_log = arg;
         break;
 
+    case 'h':
+        arguments->udp_host = arg;
+        break;
+
+    case 'p':
+	arguments->use_udp = true;
+	{
+	    char *endptr = 0;
+	    unsigned long port = strtoul(arg, &endptr, 0);
+	    if (*endptr) {
+		return EINVAL; // Error converting argument to integer
+	    }
+	    arguments->udp_port = port;
+	}
+        break;
+	
     case 'u':
-        arguments->udp_dest = arg;
+        arguments->use_udp = true;
         break;
         
     case ARGP_KEY_ARG:
@@ -68,7 +99,7 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state) {
 
     case ARGP_KEY_END:
         if (state->arg_num < 1)
-            argp_usage (state);//Not enough arguments
+            argp_usage(state);//Not enough arguments
       break;
         
     default:
@@ -78,19 +109,54 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state) {
     return 0;
 }
 
-
 /** Argument parser object. */
 static struct argp argp = {options, parse_opt, args_doc, doc};
 
 
+/**
+ * Open the program output streams
+ */
+void open_output_streams(struct arguments *args, struct output_streams *out) {
+    // Open text log
+    if (args->text_log) {
+	out->text_log = fopen(args->text_log, "w");
+	if (!out->text_log) {
+	    syslog(LOG_ERR, "Error opening text log: %s", strerror(errno));
+	    exit(EXIT_FAILURE);
+	}
+    }
+
+    // Open binary log
+    if (args->binary_log) {
+	out->binary_log = fopen(args->binary_log, "w");
+	if (!out->binary_log) {
+	    syslog(LOG_ERR, "Error opening binary log: %s", strerror(errno));
+	    exit(EXIT_FAILURE);
+	}
+    }
+    
+    // Open UDP socket
+    if (args->use_udp) {
+	out->udp_sock = socket(AF_INET, SOCK_DGRAM, 0);
+	if (out->udp_sock < 0) {
+	    syslog(LOG_ERR, "Error creating UDP socket: %s", strerror(errno));
+	    exit(EXIT_FAILURE);
+	}
+    }
+}
+
 int main(int argc, char **argv) {
     // Parse command line arguments
     struct arguments arguments = {0};
+    struct output_streams output_streams = {-1};
     argp_parse(&argp, argc, argv, 0, 0, &arguments);
 
     // Setup syslog
     openlog(0, LOG_PERROR, 0);
 
+    // Open the output streams
+    open_output_streams(&arguments, &output_streams);
+    
     // Open AHRS port
     FILE *stream = ahrs_open(arguments.port);
     if (!stream)
