@@ -30,9 +30,9 @@
       <field type="float" name="xgyro">Angular speed around X axis (rad/s)</field>
       <field type="float" name="ygyro">Angular speed around Y axis (rad/s)</field>
       <field type="float" name="zgyro">Angular speed around Z axis (rad/s)</field>
-      <field type="float" name="xmag">X magnetic field (Gauss)</field>
-      <field type="float" name="ymag">Y magnetic field (Gauss)</field>
-      <field type="float" name="zmag">Z magnetic field (Gauss)</field>
+      <field type="float" name="xmag">X magnetic field (gauss)</field>
+      <field type="float" name="ymag">Y magnetic field (gauss)</field>
+      <field type="float" name="zmag">Z magnetic field (gauss)</field>
       <field type="float" name="roll">Roll angle (rad)</field>
       <field type="float" name="pitch">Pitch angle (rad)</field>
       <field type="float" name="yaw">Yaw angle (rad)</field>

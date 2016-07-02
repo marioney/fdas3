@@ -5,7 +5,6 @@
 #ifndef AHRS400_H
 #define AHRS400_H
 
-#include <stdint.h>
 #include <stdio.h>
 
 #include "generated/ahrs400_messages/mavlink.h"

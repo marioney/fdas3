@@ -6,6 +6,7 @@
 #include <fcntl.h>
 #include <math.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <string.h>
 #include <syslog.h>
 #include <sys/stat.h>
