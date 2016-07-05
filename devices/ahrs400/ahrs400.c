@@ -25,6 +25,8 @@
 
 #define AHRS_DATA_HEADER 0xFF
 #define AHRS_MAX_MSG_SIZE 30
+#define AHRS_ANGLE_PAYLOAD_LEN 28
+
 
 /*** AHRS Message codes ***/
 // Communication test messages
@@ -286,8 +288,8 @@ static inline uint64_t get_time_us() {
         syslog(LOG_ERR, "Error getting time: %s", strerror(errno));
         return 0;
     }
-
-    return t.tv_sec * 1000 + t.tv_nsec / 1000;
+    
+    return (uint64_t)t.tv_sec * 1000 + t.tv_nsec / 1000;
 }
 
 
@@ -369,12 +371,9 @@ static inline uint16_t pack_uint16(uint8_t *payload, unsigned index) {
  */
 int ahrs_get_angle_raw(FILE *file, mavlink_ahrs400_angle_raw_t *angle_raw) {
     uint8_t payload[AHRS_ANGLE_PAYLOAD_LEN];
-    uint64_t recv_timestamp;
-
-    if (get_msg(file, sizeof payload, payload, &recv_timestamp))
+    if (get_msg(file, sizeof payload, payload, &angle_raw->time_usec))
         return -1;
-
-    angle_raw->time_usec = recv_timestamp;
+    
     angle_raw->roll = pack_int16(payload, 0);
     angle_raw->pitch = pack_int16(payload, 1);
     angle_raw->yaw = pack_int16(payload, 2);
@@ -393,38 +392,39 @@ int ahrs_get_angle_raw(FILE *file, mavlink_ahrs400_angle_raw_t *angle_raw) {
 }
 
 
-static inline double raw_to_angle(int16_t raw){
+static inline float raw_to_angle(int16_t raw){
     return raw * M_PI / 32768.0;
 }
 
 
-static inline double raw_to_gyro(int16_t raw){
+static inline float raw_to_gyro(int16_t raw){
     return raw * 1.5 * AHRS_GYRO_RANGE / 32768.0;
 }
 
 
-static inline double raw_to_accel(int16_t raw){
+static inline float raw_to_accel(int16_t raw){
     return raw * 1.5 * AHRS_G_RANGE * 9.8 / 32768.0;
 }
 
 
-static inline double raw_to_mag(int16_t raw){
+static inline float raw_to_mag(int16_t raw){
     return raw * 1.5 * 1.25e-4 / 32768.0;
 }
 
 
-static inline double raw_to_temperature(uint16_t raw){
+static inline float raw_to_temperature(uint16_t raw){
     return ((raw * 5 / 4096.0) - 1.375) * 44.44;
 }
 
 
-static inline double raw_to_time(int16_t raw){
+static inline float raw_to_time(int16_t raw){
     return -raw * 0.00000079;
 }
 
 
 void ahrs_angle_conv(mavlink_ahrs400_angle_raw_t *raw,
                      mavlink_ahrs400_angle_t *scaled) {
+    scaled->time_usec = raw->time_usec;
     scaled->xacc = raw_to_accel(raw->xacc);
     scaled->yacc = raw_to_accel(raw->yacc);
     scaled->zacc = raw_to_accel(raw->zacc);

@@ -18,10 +18,11 @@
 #include "ahrs400.h"
 
 
-// Mavlink system information
+/** Mavlink system identifier */
 #define MAVLINK_SYSID 1
-#define MAVLINK_COMPID 200 //MAV_COMP_ID_IMU
 
+/** Mavlink compenent identifier, equal to MAV_COMP_ID_IMU */
+#define MAVLINK_COMPID 200
 
 /** Program version. */
 const char *argp_program_version = "ahrs400-read 0.1";
@@ -33,78 +34,82 @@ const char *argp_program_bug_address = "https://github.com/cea-ufmg/fdas3";
 static char doc[] = "ahrs400-read -- Read from a Crossbow AHRS400.";
 
 /** Description of the accepted arguments. */
-static char args_doc[] = "PORT";
+static char args_doc[] = "AHRS_PORT";
 
 /** Program options structure. */
 static struct argp_option options[] = {
     {"logtxt", 't', "FILE", 0, "Write received data as text to FILE"},
     {"logbin", 'b', "FILE", 0, "Write binary MAVLink stream FILE"},
-    {"udp", 'u', 0,  0, "Send MAVLink messages as UDP"},
-    {"udp-host", 'h', "HOST", 0, "Host to send MAVLink messages via UDP,"
-     " defaults to 224.0.0.1, implies --udp"},
-    {"udp-port", 'p', "UDPPORT", 0, "UDP port to send MAVLink messages to,"
-     " defaults to 38400, implies --udp"},
+    {"verbose", 'v', 0, 0, "Write received data as text to STDOUT"},
+    {"udp", 'u', "HOST", OPTION_ARG_OPTIONAL,
+     "Send MAVLink messages via UDP to HOST, defaults to 224.0.0.1"},
+    {"udp-port", 'p', "UDPPORT", 0,
+     "UDP port to send MAVLink messages to, defaults to 38400, implies --udp"},
     {0}
 };
 
 /** Program arguments structure. */
-struct arguments {
-    char *port;
+typedef struct arguments {
+    char *ahrs_port;
     char *text_log;
     char *binary_log;
+    bool verbose;
     bool use_udp;
     char *udp_host;
     uint16_t udp_port;
-};
+} arguments_t;
 
 /** Program output streams structure */
-struct output_streams {
+typedef struct output_streams {
     int udp_sock;
     FILE *binary_log;
     FILE *text_log;
-};
+} output_streams_t;
+
 
 /** Argument parser function */
 static error_t parse_opt (int key, char *arg, struct argp_state *state) {
     //Get the arguments structure to write the parsed options
-    struct arguments *arguments = state->input;
+    arguments_t *arguments = state->input;
     
     switch (key) {
     case 't':
         arguments->text_log = arg;
+        break;
+
+    case 'v':
+        arguments->verbose = true;
         break;
         
     case 'b':
         arguments->binary_log = arg;
         break;
 
-    case 'h':
-        arguments->udp_host = arg;
+    case 'u':
+        arguments->use_udp = true;
+        if (arg)
+            arguments->udp_host = arg;
         break;
-
+        
     case 'p':
 	arguments->use_udp = true;
 	{
 	    char *endptr = 0;
-	    unsigned long port = strtoul(arg, &endptr, 0);
+	    unsigned long udp_port = strtoul(arg, &endptr, 0);
 	    if (*endptr) {
                 argp_error(state, "UPDPORT argument must be an integer.");
 	    }
-            if (port > 65535) {
+            if (udp_port > 65535) {
                 argp_error(state, "UPDPORT number too large.");
             }
-	    arguments->udp_port = port;
+	    arguments->udp_port = udp_port;
 	}
         break;
-	
-    case 'u':
-        arguments->use_udp = true;
-        break;
-        
+	        
     case ARGP_KEY_ARG:
       if (state->arg_num >= 1)
           argp_error(state, "Too many arguments.");
-      arguments->port = arg;
+      arguments->ahrs_port = arg;
       break;
 
     case ARGP_KEY_END:
@@ -119,6 +124,7 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state) {
     return 0;
 }
 
+
 /** Argument parser object. */
 static struct argp argp = {options, parse_opt, args_doc, doc};
 
@@ -126,7 +132,7 @@ static struct argp argp = {options, parse_opt, args_doc, doc};
 /**
  * Open the program output streams
  */
-void open_output_streams(struct arguments *args, struct output_streams *out) {
+void open_output_streams(arguments_t *args, output_streams_t *out) {
     // Open text log
     if (args->text_log) {
 	out->text_log = fopen(args->text_log, "w");
@@ -186,11 +192,12 @@ void open_output_streams(struct arguments *args, struct output_streams *out) {
     }
 }
 
-void log_text(mavlink_ahrs400_angle_t *angle, struct output_streams *out) {
-    if (out->text_log) {
+
+void log_text(const mavlink_ahrs400_angle_t *angle, FILE *out) {
+    if (out) {
         int status = fprintf(
-            out->text_log, "%lu\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t"
-            "%f\t%f\t%f\t%f\t%u\n", angle->time_usec,
+            out, "%llu\t%e\t%e\t%e\t%e\t%e\t%e\t%e\t%e\t%e\t"
+            "%e\t%e\t%e\t%e\t%u\n", (unsigned long long) angle->time_usec,
             angle->xacc, angle->yacc, angle->zacc,
             angle->xgyro, angle->ygyro, angle->zgyro,
             angle->xmag, angle->ymag, angle->zmag,
@@ -203,7 +210,7 @@ void log_text(mavlink_ahrs400_angle_t *angle, struct output_streams *out) {
 }
 
 
-void output_mavlink_msg(mavlink_message_t *msg, struct output_streams *out) {
+void output_mavlink_msg(mavlink_message_t *msg, output_streams_t *out) {
     uint8_t buf[MAVLINK_MAX_PACKET_LEN];
     size_t len = mavlink_msg_to_send_buffer(buf, msg);
     
@@ -218,19 +225,18 @@ void output_mavlink_msg(mavlink_message_t *msg, struct output_streams *out) {
 	    syslog(LOG_ERR, "Error sending UDP message: %s", strerror(errno));
 }
 
-void output_angle_raw(mavlink_ahrs400_angle_raw_t *angle_raw,
-                      struct output_streams *out) {
+
+void output_angle_raw(const mavlink_ahrs400_angle_raw_t *angle_raw,
+                      output_streams_t *out) {
     mavlink_message_t msg;
     mavlink_msg_ahrs400_angle_raw_encode(
         MAVLINK_SYSID, MAVLINK_COMPID, &msg, angle_raw
     );
-
-    uint8_t buf[MAVLINK_MAX_PACKET_LEN];
-    uint16_t len = mavlink_msg_to_send_buffer(buf, &msg);
     output_mavlink_msg(&msg, out);
 }
 
-void output_angle(mavlink_ahrs400_angle_t *angle, struct output_streams *out) {
+
+void output_angle(const mavlink_ahrs400_angle_t *angle, output_streams_t *out) {
     mavlink_message_t msg;
     mavlink_msg_ahrs400_angle_encode(
         MAVLINK_SYSID, MAVLINK_COMPID, &msg, angle
@@ -238,10 +244,11 @@ void output_angle(mavlink_ahrs400_angle_t *angle, struct output_streams *out) {
     output_mavlink_msg(&msg, out);
 }
 
+
 int main(int argc, char **argv) {
     // Parse command line arguments
-    struct arguments arguments = {.udp_host = "224.0.0.1", .udp_port=38400};
-    struct output_streams output_streams = {-1};
+    arguments_t arguments = {.udp_host="224.0.0.1", .udp_port=38400};
+    output_streams_t output_streams = {.udp_sock=-1};
     argp_parse(&argp, argc, argv, 0, 0, &arguments);
 
     // Setup syslog
@@ -251,7 +258,7 @@ int main(int argc, char **argv) {
     open_output_streams(&arguments, &output_streams);
     
     // Open AHRS port
-    FILE *ahrs_stream = ahrs_open(arguments.port);
+    FILE *ahrs_stream = ahrs_open(arguments.ahrs_port);
     if (!ahrs_stream)
         return EXIT_FAILURE;
 
@@ -284,7 +291,10 @@ int main(int argc, char **argv) {
 
         output_angle_raw(&angle_raw, &output_streams);
         output_angle(&angle, &output_streams);
-        log_text(&angle, &output_streams);
+        
+        log_text(&angle, output_streams.text_log);
+        if (arguments.verbose)
+            log_text(&angle, stdout);
     }
     
     return 0;

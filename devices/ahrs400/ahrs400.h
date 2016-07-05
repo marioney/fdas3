@@ -9,8 +9,6 @@
 
 #include "generated/ahrs400_messages/mavlink.h"
 
-#define AHRS_ANGLE_PAYLOAD_LEN 28
-
 typedef enum {
     AHRS_VOLTAGE_MODE,
     AHRS_SCALED_MODE,
