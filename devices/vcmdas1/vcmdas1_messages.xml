@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<mavlink>
+  <enums>
+  </enums>
+  <messages>
+    <message id="160" name="ADC_RAW">
+      <description>Raw data from the analog to digital converter.</description>
+      <field type="uint64_t" name="time_usec">Unix timestamp in microseconds or since system boot if smaller than MAVLink epoch (1.1.2009)</field>
+      <field type="uint16_t[16]" name="data">Raw data from the ADC.</field>
+    </message>
+  </messages>
+</mavlink>
