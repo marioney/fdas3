@@ -14,8 +14,10 @@
 #include <syslog.h>
 #include <sys/io.h>
 #include <sys/socket.h>
+#include <time.h>
 #include <unistd.h>
 
+#include "../utils.h"
 
 #include "generated/vcmdas1_messages/mavlink.h"
 
@@ -23,9 +25,9 @@
 #define PORT_RANGE 16 ///< Number of IO ports used
 
 // Board register offsets
-#define ADCSTAT   0x00
 #define CONTROL   0x00
-#define SELECT    0x01
+#define ADCSTAT   0x00
+#define ADCSEL    0x01
 #define CONVERT   0x02
 #define ADCLO     0x04
 #define ADCHI     0x05
@@ -213,6 +215,81 @@ void open_output_streams(arguments_t *args, output_streams_t *out) {
 }
 
 
+void log_text(const mavlink_adc_raw_t *adc, FILE *out) {
+    if (!out)
+        return;
+    
+    if (fprintf(out, "%llu\t", (long long unsigned) adc->time_usec) < 0)
+        goto err;
+    
+    for (int i=0; i<16; i++) {
+        if (fprintf(out, "%d\t", (int) adc->data[i]) < 0)
+            goto err;
+    }
+
+    if (fprintf(out, "\n") < 0)
+        goto err;
+    
+    return;
+ err:
+    syslog(LOG_ERR, "Error writing to text log: %s", strerror(errno));
+}
+
+
+void output_mavlink_msg(mavlink_message_t *msg, output_streams_t *out) {
+    uint8_t buf[MAVLINK_MAX_PACKET_LEN];
+    size_t len = mavlink_msg_to_send_buffer(buf, msg);
+    
+    // Output to binary log
+    if (out->binary_log)
+        if (!fwrite(buf, len, 1, out->binary_log))
+	    syslog(LOG_ERR, "Error writing to binary log: %s", strerror(errno));
+    
+    // Output to UDP socket
+    if (out->udp_sock > 0)
+        if (send(out->udp_sock, buf, len, 0) != len)
+	    syslog(LOG_ERR, "Error sending UDP message: %s", strerror(errno));
+}
+
+
+void output_adc_raw(const mavlink_adc_raw_t *adc, output_streams_t *out) {
+    mavlink_message_t msg;
+    mavlink_msg_adc_raw_encode(MAVLINK_SYSID, MAVLINK_COMPID, &msg, adc);
+    output_mavlink_msg(&msg, out);
+}
+
+
+/**
+ * Read a from the VCM-DAS-1.
+ * @returns 0 if success, -1 if error.
+ */
+int read_adc(unsigned base_address, uint8_t channel, int16_t *value) {
+    outw(channel + 0x100, base_address + ADCSEL);
+    usleep(10);
+
+    if (!inb(base_address + ADCSTAT) & DONE_BIT)
+        return -1;
+
+    *value = inw(base_address + ADCLO);
+    return 0;
+}
+
+
+/**
+ * Read all channels from the VCM-DAS-1.
+ * @returns 0 if success, -1 if error.
+ */
+int read_all(unsigned base_address, mavlink_adc_raw_t *adc) {
+    adc->time_usec = get_time_us();
+    for (int i=0; i<16; i++) {
+        if (read_adc(base_address, i, &adc->data[i]))
+            return -1;
+    }
+    
+    return 0;
+}
+
+
 int main(int argc, char **argv) {
     // Parse command line arguments
     arguments_t arguments = {
@@ -226,12 +303,39 @@ int main(int argc, char **argv) {
 
     // Open the output streams
     open_output_streams(&arguments, &output_streams);
-
+    
     // Request IO port permission
     ioperm(arguments.base_address, PORT_RANGE, 1);
     
     // Set control register
     outb(0, arguments.base_address + CONTROL);
+
+    // Create the sampling timer
+    timer_t timerid;
+    if (timer_create(CLOCK_REALTIME, NULL, &timerid)) {
+        syslog(LOG_ERR, "Error creating timer: %s", strerror(errno));
+        exit(EXIT_FAILURE);
+    }
+
+    ///// timer_settime
+    ///// link with -lrt
+    
+    
+    // Read loop
+    for (;;) {
+        ////// sigwait
+        sleep(1);
+        
+        mavlink_adc_raw_t adc;
+        if (read_all(arguments.base_address, &adc))
+            syslog(LOG_ERR, "Reading ADC.");
+        
+        output_adc_raw(&adc, &output_streams);
+        
+        log_text(&adc, output_streams.text_log);
+        if (arguments.verbose)
+            log_text(&adc, stdout);
+    }
     
     return 0;
 }

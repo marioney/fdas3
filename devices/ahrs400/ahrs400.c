@@ -16,6 +16,7 @@
 
 
 #include "ahrs400.h"
+#include "../utils.h"
 
 
 /*** AHRS constants ***/
@@ -276,20 +277,6 @@ static uint8_t checksum(uint8_t *payload, unsigned size) {
     for (int i=0; i<size; i++)
         checksum += payload[i];
     return checksum;
-}
-
-
-/**
- * Get current time in microseconds since epoch.
- */
-static inline uint64_t get_time_us() {
-    struct timespec t;
-    if (clock_gettime(CLOCK_REALTIME, &t)) {
-        syslog(LOG_ERR, "Error getting time: %s", strerror(errno));
-        return 0;
-    }
-    
-    return (uint64_t)t.tv_sec * 1000 + t.tv_nsec / 1000;
 }
 
 
