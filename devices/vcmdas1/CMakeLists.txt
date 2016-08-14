@@ -10,3 +10,5 @@ include_directories("${CMAKE_CURRENT_BINARY_DIR}")
 
 add_executable(vcmdas1-read vcmdas1-read.c)
 add_dependencies(vcmdas1-read vcmdas1-mavgen)
+
+target_link_libraries(vcmdas1-read rt)

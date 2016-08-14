@@ -6,6 +6,7 @@
 #include <argp.h>
 #include <errno.h>
 #include <netdb.h>
+#include <signal.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -317,21 +318,35 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
     }
 
-    ///// timer_settime
-    ///// link with -lrt
-    
+    // Fire the timer
+    struct itimerspec itimerspec = {
+        .it_interval={.tv_sec = 0, .tv_nsec=20000000L},
+        .it_value={.tv_sec = 0, .tv_nsec=20000000L},
+    };
+    if (timer_settime(timerid, 0, &itimerspec, NULL)) {
+        syslog(LOG_ERR, "Error configuring timer: %s", strerror(errno));
+        exit(EXIT_FAILURE);
+    }
+
+    // Create the signal mask
+    sigset_t waitset;
+    sigemptyset(&waitset);
+    sigaddset(&waitset, SIGALRM);
     
     // Read loop
     for (;;) {
-        ////// sigwait
-        sleep(1);
-        
+        // Wait for timer signal
+        sigwait(&waitset, NULL);
+
+        // Read from the ADC
         mavlink_adc_raw_t adc;
         if (read_all(arguments.base_address, &adc))
             syslog(LOG_ERR, "Reading ADC.");
-        
+
+        // Output Mavlink
         output_adc_raw(&adc, &output_streams);
-        
+
+        // Output text
         log_text(&adc, output_streams.text_log);
         if (arguments.verbose)
             log_text(&adc, stdout);
