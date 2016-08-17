@@ -55,7 +55,7 @@ const char *argp_program_bug_address = "https://github.com/cea-ufmg/fdas3";
 static char doc[] = "vcmdas1-read -- Read from a Versalogic VCM-DAS-1.";
 
 /** Description of the accepted arguments. */
-static char args_doc[] = "BASE_ADDRESS";
+static char args_doc[] = "[BASE_ADDRESS]";
 
 /** Program options structure. */
 static struct argp_option options[] = {
@@ -115,12 +115,15 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state) {
     case 'p':
 	arguments->use_udp = true;
 	{
-	    char *endptr = 0;
-	    unsigned long base_address = strtoul(arg, &endptr, 0);
-	    if (*endptr) {
-                argp_error(state, "BASE_ADDRESS argument must be an uint.");
-	    }
-	    arguments->base_address = base_address;
+            char *endptr = 0;
+            unsigned long udp_port = strtoul(arg, &endptr, 0);
+            if (*endptr) {
+                argp_error(state, "UPDPORT argument must be an integer.");
+            }
+            if (udp_port > 65535) {
+                argp_error(state, "UPDPORT number too large.");
+            }
+            arguments->udp_port = udp_port;            
 	}
         break;
 	        
@@ -128,15 +131,12 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state) {
       if (state->arg_num >= 1)
           argp_error(state, "Too many arguments.");
       else {
-          char *endptr = 0;
-          unsigned long udp_port = strtoul(arg, &endptr, 0);
-          if (*endptr) {
-              argp_error(state, "UPDPORT argument must be an integer.");
-          }
-          if (udp_port > 65535) {
-              argp_error(state, "UPDPORT number too large.");
-          }
-          arguments->udp_port = udp_port;
+	    char *endptr = 0;
+	    unsigned long base_address = strtoul(arg, &endptr, 0);
+	    if (*endptr) {
+                argp_error(state, "BASE_ADDRESS argument must be an uint.");
+	    }
+	    arguments->base_address = base_address;
       }
       break;
       
@@ -165,10 +165,7 @@ void open_output_streams(arguments_t *args, output_streams_t *out) {
 	}
         // Print file header
         int status = fprintf(
-            out->text_log, "%% time[us]\txacc[m/s^2]\tyacc\tzacc\t"
-            "xgyro[rad/s]\tygyro\tzgyro\txmag[gauss]\tymag\tzmag\t"
-            "xmag[gauss]\tymag\tzmag\troll[rad]\tpitch\tyaw\t"
-            "temperature[C]\tsensor_time\n"
+            out->text_log, "%% time[us]\tch0[raw] --- ch15[raw]\n"
         );
         if (status < 0)
             syslog(LOG_ERR, "Error writing to text log: %s", strerror(errno));
@@ -261,33 +258,30 @@ void output_adc_raw(const mavlink_adc_raw_t *adc, output_streams_t *out) {
 
 
 /**
- * Read a from the VCM-DAS-1.
- * @returns 0 if success, -1 if error.
+ * Whether the analog to digital conversion is done.
  */
-int read_adc(unsigned base_address, uint8_t channel, int16_t *value) {
+static inline bool conversion_done(unsigned base_address) {
+    return inb(base_address + ADCSTAT) & DONE_BIT;
+}
+
+
+/**
+ * Read a from the VCM-DAS-1.
+ */
+static inline int16_t read_adc(unsigned base_address, uint8_t channel) {
     outw(channel + 0x100, base_address + ADCSEL);
-    usleep(10);
-
-    if (!inb(base_address + ADCSTAT) & DONE_BIT)
-        return -1;
-
-    *value = inw(base_address + ADCLO);
-    return 0;
+    while (!conversion_done(base_address));
+    return inw(base_address + ADCLO);
 }
 
 
 /**
  * Read all channels from the VCM-DAS-1.
- * @returns 0 if success, -1 if error.
  */
-int read_all(unsigned base_address, mavlink_adc_raw_t *adc) {
+void read_all(unsigned base_address, mavlink_adc_raw_t *adc) {
     adc->time_usec = get_time_us();
-    for (int i=0; i<16; i++) {
-        if (read_adc(base_address, i, &adc->data[i]))
-            return -1;
-    }
-    
-    return 0;
+    for (int i=0; i<16; i++)
+        adc->data[i] = read_adc(base_address, i);
 }
 
 
@@ -317,32 +311,34 @@ int main(int argc, char **argv) {
         syslog(LOG_ERR, "Error creating timer: %s", strerror(errno));
         exit(EXIT_FAILURE);
     }
-
+    
+    // Block SIGALRM
+    sigset_t alrmset;
+    sigemptyset(&alrmset);
+    sigaddset(&alrmset, SIGALRM);
+    sigprocmask(SIG_BLOCK, &alrmset, NULL);
+    
     // Fire the timer
     struct itimerspec itimerspec = {
-        .it_interval={.tv_sec = 0, .tv_nsec=20000000L},
-        .it_value={.tv_sec = 0, .tv_nsec=20000000L},
+        .it_interval={.tv_sec=0, .tv_nsec=20000000L},
+        .it_value={.tv_sec=0, .tv_nsec=20000000L},
     };
     if (timer_settime(timerid, 0, &itimerspec, NULL)) {
         syslog(LOG_ERR, "Error configuring timer: %s", strerror(errno));
         exit(EXIT_FAILURE);
     }
-
-    // Create the signal mask
-    sigset_t waitset;
-    sigemptyset(&waitset);
-    sigaddset(&waitset, SIGALRM);
     
     // Read loop
     for (;;) {
         // Wait for timer signal
-        sigwait(&waitset, NULL);
+        int sig;
+        if (sigwait(&alrmset, &sig))
+            syslog(LOG_ERR, "Error in sigwait: %s", strerror(errno));
 
         // Read from the ADC
         mavlink_adc_raw_t adc;
-        if (read_all(arguments.base_address, &adc))
-            syslog(LOG_ERR, "Reading ADC.");
-
+        read_all(arguments.base_address, &adc);
+        
         // Output Mavlink
         output_adc_raw(&adc, &output_streams);
 
