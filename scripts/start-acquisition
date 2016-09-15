@@ -1,0 +1,17 @@
+#!/bin/bash
+
+set -e
+
+TIMESTAMP=`date +%F_%Hh%Mm%Ss`
+LOGDIR=/tmp/log/$TIMESTAMP
+
+AHRS_PORT=/dev/ttyS2
+GPS_PORT=/dev/ttyS4
+
+mkdir -p $LOGDIR
+
+/sbin/setcap -v cap_sys_rawio=ep ~/fdas3/build/devices/vcmdas1/vcmdas1-read
+
+vcmdas1-read --logtxt=$LOGDIR/adc.log &
+ahrs400-read --logtxt=$LOGDIR/ahrs.log $AHRS_PORT &
+python3 -m pyfdas.gps --logtxtdir=$LOGDIR $GPS_PORT &

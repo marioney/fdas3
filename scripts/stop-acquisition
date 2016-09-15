@@ -1,0 +1,5 @@
+#!/bin/bash
+
+killall -q vcmdas1-read
+killall -q ahrs400-read
+pkill -f 'python3 -m pyfdas\.gps'
