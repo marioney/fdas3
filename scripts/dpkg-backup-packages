@@ -1,0 +1,4 @@
+#!/bin/bash
+
+mkdir -p ~/config-backup
+dpkg --get-selections > ~/config-backup/package-selections
