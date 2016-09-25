@@ -3,7 +3,7 @@
 set -e
 
 TIMESTAMP=`date +%F_%Hh%Mm%Ss`
-LOGDIR=/tmp/log/$TIMESTAMP
+: ${LOGDIR:="$HOME/log/$TIMESTAMP"}
 
 AHRS_PORT=/dev/ttyS2
 GPS_PORT=/dev/ttyS4

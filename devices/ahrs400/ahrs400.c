@@ -16,7 +16,7 @@
 
 
 #include "ahrs400.h"
-#include "../utils.h"
+#include "../../utils/utils.h"
 
 
 /*** AHRS constants ***/

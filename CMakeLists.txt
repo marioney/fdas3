@@ -5,4 +5,6 @@ if(CMAKE_COMPILER_IS_GNUCC)
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99")
 endif()
 
+
+add_subdirectory(utils)
 add_subdirectory(devices)

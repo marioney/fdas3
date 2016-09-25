@@ -18,7 +18,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#include "../utils.h"
+#include "../../utils/utils.h"
 
 #include "generated/vcmdas1_messages/mavlink.h"
 
@@ -164,11 +164,11 @@ void open_output_streams(arguments_t *args, output_streams_t *out) {
 	    exit(EXIT_FAILURE);
 	}
         // Print file header
-        int status = fprintf(
-            out->text_log, "%% time[us]\tch0[raw] --- ch15[raw]\n"
-        );
-        if (status < 0)
+        if (fprintf(out->text_log, "%% time[us]\t") < 0)
             syslog(LOG_ERR, "Error writing to text log: %s", strerror(errno));
+        for (int i=0; i<0; i++)
+            if (fprintf(out->text_log, "channel%d\t", i) < 0)
+                syslog(LOG_ERR,"Error writing to text log: %s",strerror(errno));
     }
     
     // Open binary log
