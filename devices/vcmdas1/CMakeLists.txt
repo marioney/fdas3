@@ -12,10 +12,10 @@ add_executable(vcmdas1-read vcmdas1-read.c)
 add_dependencies(vcmdas1-read vcmdas1-mavgen)
 target_link_libraries(vcmdas1-read rt)
 
+install(TARGETS vcmdas1-read DESTINATION bin)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   install(CODE "execute_process(COMMAND \
       \"setcap\" \"cap_sys_rawio=ep\" \
-      \"${CMAKE_CURRENT_BINARY_DIR}/vcmdas1-read\")")
+      \"${CMAKE_INSTALL_PREFIX}/bin/vcmdas1-read\")")
 endif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-install(TARGETS vcmdas1-read DESTINATION bin)
 
