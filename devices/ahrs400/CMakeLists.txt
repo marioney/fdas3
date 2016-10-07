@@ -10,3 +10,5 @@ include_directories("${CMAKE_CURRENT_BINARY_DIR}")
 
 add_executable(ahrs400-read ahrs400-read.c ahrs400.c)
 add_dependencies(ahrs400-read ahrs400-mavgen)
+
+install(TARGETS ahrs400-read DESTINATION bin)
