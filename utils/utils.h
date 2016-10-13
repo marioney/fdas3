@@ -20,7 +20,7 @@ static inline uint64_t get_time_us() {
         return 0;
     }
     
-    return (uint64_t)t.tv_sec * 1000 + t.tv_nsec / 1000;
+    return (uint64_t)t.tv_sec * 1000000 + (uint64_t)t.tv_nsec / 1000;
 }
 
 
