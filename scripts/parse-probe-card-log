@@ -1,0 +1,21 @@
+#!/bin/bash
+
+echo "converting alpha"
+python -m pyfdas.mavlogparse aeroprobe_card.mavlog --condition=DATA_INT.id==20 \
+                       --no-timestamps > aeroprobe_card_alpha.log
+
+echo "converting beta"
+python -m pyfdas.mavlogparse aeroprobe_card.mavlog --condition=DATA_INT.id==21 \
+                       --no-timestamps > aeroprobe_card_beta.log
+                                 
+echo "converting qbar"
+python -m pyfdas.mavlogparse aeroprobe_card.mavlog --condition=DATA_INT.id==22 \
+                       --no-timestamps > aeroprobe_card_qbar.log
+
+echo "converting pressure"
+python -m pyfdas.mavlogparse aeroprobe_card.mavlog --condition=DATA_INT.id==24 \
+                       --no-timestamps > aeroprobe_card_pressure.log
+
+echo "converting temperature"
+python -m pyfdas.mavlogparse aeroprobe_card.mavlog --condition=DATA_INT.id==23 \
+                       --no-timestamps > aeroprobe_card_temperature.log

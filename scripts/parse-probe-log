@@ -13,9 +13,9 @@ python -m pyfdas.mavlogparse aeroprobe.mavlog --condition=DATA_INT.id==22 \
                                  > aeroprobe_qbar.log
 
 echo "converting pressure"
-python -m pyfdas.mavlogparse aeroprobe.mavlog --condition=DATA_INT.id==23 \
+python -m pyfdas.mavlogparse aeroprobe.mavlog --condition=DATA_INT.id==24 \
                                  > aeroprobe_pressure.log
 
 echo "converting temperature"
-python -m pyfdas.mavlogparse aeroprobe.mavlog --condition=DATA_INT.id==24 \
+python -m pyfdas.mavlogparse aeroprobe.mavlog --condition=DATA_INT.id==23 \
                                  > aeroprobe_temperature.log
